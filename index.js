@@ -2,25 +2,71 @@ const express = require('express');
 const app = express();
 const cors = require('cors');
 const pool = require('./db');
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage() });
 
 //middleware
 app.use(cors());
 app.use(express.json()); //req.body
 
+// firebase.js
+const admin = require('firebase-admin');
+const path = require('path');
+
+const serviceAccount = require('./firebase-key.json');
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  storageBucket: 'portfolio-d9319.firebasestorage.app',
+});
+
 //ROUTES
 
 //post a blog post
 
-app.post('/new', async (req, res) => {
+//app.post('/new', ...): Defines a POST route at /new.
+//upload.single('cover'): Middleware from multer that parses a single file upload from a form field named "cover".
+// async (req, res) => { ... }: Asynchronous function that handles the request.
+app.post('/new', upload.single('cover'), async (req, res) => {
   try {
     const { title, description, content } = req.body;
+    const file = req.file;
+    let imageUrl = null;
+    // req.body: Gets form fields (title, description, content).
+    // req.file: The uploaded image file parsed by multer.
+    // imageUrl: Will store the URL of the uploaded image, if present.
+    if (file) {
+      //Checks if an image file was actually uploaded.
+      const blob = bucket.file(Date.now() + '-' + file.originalname);
+      // Creates a unique filename (timestamp + original name).
+      // bucket.file(...): Prepares a Firebase Storage file reference.
+      const blobStream = blob.createWriteStream({
+        metadata: { contentType: file.mimetype },
+      });
+      // Prepares to upload the image as a stream.
+      // Sets the MIME type (e.g., image/png).
+      blobStream.end(file.buffer);
+      //Sends the image's binary data to Firebase.
+      await new Promise((resolve, reject) => {
+        blobStream.on('finish', resolve);
+        blobStream.on('error', reject);
+      });
+      //Waits for the upload to finish or fail.
+      //This ensures we don’t continue until the image is fully uploaded.
+      await blob.makePublic();
+      //Makes the uploaded file publicly viewable.
+      imageUrl = `https://storage.googleapis.com/${bucket.name}/${blob.name}`;
+    }
+    // Constructs a public URL for the uploaded image.
     const newPost = await pool.query(
-      'INSERT INTO posts (title, description, content) VALUES($1, $2, $3) RETURNING *',
-      [title, description, content]
+      'INSERT INTO posts (title, description, content, cover_photo) VALUES($1, $2, $3, $4) RETURNING *',
+      [title, description, content, imageUrl]
     );
-    res.json(newPost.rows[0]);
+
+    res.status(201).json(newPost.rows[0]);
   } catch (err) {
     console.error(err.message);
+    res.status(500).send('Error creating blog post');
   }
 });
 
@@ -74,6 +120,7 @@ app.delete('/post/:id', async (req, res) => {
     console.log(err.message);
   }
 });
+const bucket = admin.storage().bucket();
 
 app.listen(8000, () => {
   console.log('server has started on port 8000');

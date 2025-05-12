@@ -117,9 +117,25 @@ app.delete('/post/:id', async (req, res) => {
     ]);
     res.json('Post was deleted!');
   } catch (err) {
-    console.log(err.message);
+    console.error(err.message);
   }
 });
+
+//post contact
+app.post('/contact', async (req, res) => {
+  try {
+    const { name, email, message } = req.body;
+    const newContact = await pool.query(
+      'INSERT INTO contact_me (name, email, message) VALUES($1, $2, $3) RETURNING *',
+      [name, email, message]
+    );
+    res.status(201).json(newContact.rows[0]);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+});
+
 const bucket = admin.storage().bucket();
 
 app.listen(8000, () => {
